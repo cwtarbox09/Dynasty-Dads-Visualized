@@ -92,13 +92,23 @@ function stdDev(values: number[]): number {
   return Math.sqrt(variance);
 }
 
+// Sleeper can return null for empty endpoints; coerce to array and swallow failures.
+function safeArr<T>(promise: Promise<T[] | null>): Promise<T[]> {
+  return promise.then((v) => (Array.isArray(v) ? v : [])).catch(() => []);
+}
+
 export async function GET() {
   try {
-    // Phase 1: fetch leagues and their drafts in parallel — no dependency between them
-    const [leagues, leagueDraftsArrays] = await Promise.all([
-      Promise.all(LEAGUE_IDS.map(fetchLeague)),
-      Promise.all(LEAGUE_IDS.map(fetchLeagueDrafts)),
+    // Phase 1: leagues + drafts fire together; individual failures fall back to null/[]
+    const [leagueResults, leagueDraftsArrays] = await Promise.all([
+      Promise.all(LEAGUE_IDS.map((id) => fetchLeague(id).catch(() => null))),
+      Promise.all(LEAGUE_IDS.map((id) => safeArr(fetchLeagueDrafts(id)))),
     ]);
+
+    // Pair each league with its index so we can skip nulls while keeping alignment
+    const validLeagues = leagueResults
+      .map((league, i) => ({ league, i }))
+      .filter((x): x is { league: SleeperLeague; i: number } => x.league !== null);
 
     // Collect all draft IDs (needed before phase 2)
     const allDraftIds: string[] = [];
@@ -110,14 +120,14 @@ export async function GET() {
       });
     });
 
-    // Phase 2: fetch all remaining data in parallel — none of these depend on each other
+    // Phase 2: all remaining data fires simultaneously; each fetch is independently resilient
     const [allPickArrays, allTradedPickArrays, leagueTradedPicksArrays, rostersArrays, usersArrays] =
       await Promise.all([
-        Promise.all(allDraftIds.map(fetchDraftPicks)),
-        Promise.all(allDraftIds.map(fetchDraftTradedPicks)),
-        Promise.all(LEAGUE_IDS.map(fetchLeagueTradedPicks)),
-        Promise.all(LEAGUE_IDS.map(fetchLeagueRosters)),
-        Promise.all(LEAGUE_IDS.map(fetchLeagueUsers)),
+        Promise.all(allDraftIds.map((id) => safeArr(fetchDraftPicks(id)))),
+        Promise.all(allDraftIds.map((id) => safeArr(fetchDraftTradedPicks(id)))),
+        Promise.all(LEAGUE_IDS.map((id) => safeArr(fetchLeagueTradedPicks(id)))),
+        Promise.all(LEAGUE_IDS.map((id) => safeArr(fetchLeagueRosters(id)))),
+        Promise.all(LEAGUE_IDS.map((id) => safeArr(fetchLeagueUsers(id)))),
       ]);
 
     // Flatten all picks
@@ -234,7 +244,7 @@ export async function GET() {
       }));
 
     // ─── 5. League Standings ──────────────────────────────────────────────
-    const leagueStandings: LeagueStanding[] = leagues.map((league, i) => {
+    const leagueStandings: LeagueStanding[] = validLeagues.map(({ league, i }) => {
       const rosters = rostersArrays[i] || [];
       const users = usersArrays[i] || [];
       const userMap: Record<string, SleeperUser> = {};
@@ -293,7 +303,7 @@ export async function GET() {
     // ─── 9. Draft completion rates ────────────────────────────────────────
     const draftCompletionRates = leagueDraftsArrays.map((drafts, i) => ({
       leagueId: LEAGUE_IDS[i],
-      name: leagues[i]?.name || LEAGUE_IDS[i],
+      name: leagueResults[i]?.name || LEAGUE_IDS[i],
       status: drafts[0]?.status || "unknown",
     }));
 
@@ -303,7 +313,7 @@ export async function GET() {
       tradesByRound,
       positionByRound,
       leagueStandings,
-      totalLeagues: leagues.length,
+      totalLeagues: validLeagues.length,
       totalPicks: allPicks.length,
       totalTrades: allDraftTradedPicks.length,
       mostTradedPick,
