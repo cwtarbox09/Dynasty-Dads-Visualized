@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 export const maxDuration = 60;
+export const revalidate = 3600;
 import { LEAGUE_IDS } from "@/lib/constants";
 import {
   fetchLeague,
@@ -91,27 +92,15 @@ function stdDev(values: number[]): number {
   return Math.sqrt(variance);
 }
 
-function batchFetch<T>(ids: string[], fetcher: (id: string) => Promise<T>, batchSize = 5): Promise<T[]> {
-  return new Promise(async (resolve, reject) => {
-    const results: T[] = [];
-    for (let i = 0; i < ids.length; i += batchSize) {
-      const batch = ids.slice(i, i + batchSize);
-      const batchResults = await Promise.all(batch.map(fetcher));
-      results.push(...batchResults);
-    }
-    resolve(results);
-  });
-}
-
 export async function GET() {
   try {
-    // Fetch all leagues in parallel batches
-    const leagues = await batchFetch(LEAGUE_IDS, fetchLeague, 8);
+    // Phase 1: fetch leagues and their drafts in parallel — no dependency between them
+    const [leagues, leagueDraftsArrays] = await Promise.all([
+      Promise.all(LEAGUE_IDS.map(fetchLeague)),
+      Promise.all(LEAGUE_IDS.map(fetchLeagueDrafts)),
+    ]);
 
-    // Fetch drafts for all leagues
-    const leagueDraftsArrays = await batchFetch(LEAGUE_IDS, fetchLeagueDrafts, 8);
-
-    // Collect all draft IDs
+    // Collect all draft IDs (needed before phase 2)
     const allDraftIds: string[] = [];
     const draftToLeague: Record<string, string> = {};
     leagueDraftsArrays.forEach((drafts, i) => {
@@ -121,20 +110,15 @@ export async function GET() {
       });
     });
 
-    // Fetch picks and traded picks for all drafts
-    const [allPickArrays, allTradedPickArrays] = await Promise.all([
-      batchFetch(allDraftIds, fetchDraftPicks, 8),
-      batchFetch(allDraftIds, fetchDraftTradedPicks, 8),
-    ]);
-
-    // Fetch league-level traded picks for all leagues (includes future picks)
-    const leagueTradedPicksArrays = await batchFetch(LEAGUE_IDS, fetchLeagueTradedPicks, 8);
-
-    // Fetch rosters and users for standings
-    const [rostersArrays, usersArrays] = await Promise.all([
-      batchFetch(LEAGUE_IDS, fetchLeagueRosters, 8),
-      batchFetch(LEAGUE_IDS, fetchLeagueUsers, 8),
-    ]);
+    // Phase 2: fetch all remaining data in parallel — none of these depend on each other
+    const [allPickArrays, allTradedPickArrays, leagueTradedPicksArrays, rostersArrays, usersArrays] =
+      await Promise.all([
+        Promise.all(allDraftIds.map(fetchDraftPicks)),
+        Promise.all(allDraftIds.map(fetchDraftTradedPicks)),
+        Promise.all(LEAGUE_IDS.map(fetchLeagueTradedPicks)),
+        Promise.all(LEAGUE_IDS.map(fetchLeagueRosters)),
+        Promise.all(LEAGUE_IDS.map(fetchLeagueUsers)),
+      ]);
 
     // Flatten all picks
     const allPicks: DraftPick[] = allPickArrays.flat().filter(Boolean);
