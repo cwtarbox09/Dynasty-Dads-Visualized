@@ -168,3 +168,19 @@ export async function fetchDraftTradedPicks(draftId: string): Promise<TradedPick
 export async function fetchLeagueTradedPicks(leagueId: string): Promise<TradedPick[]> {
   return fetchWithRetry(`${BASE}/league/${leagueId}/traded_picks`) as Promise<TradedPick[]>;
 }
+
+export interface SleeperUserProfile {
+  user_id: string;
+  username: string;
+  display_name: string;
+  avatar: string | null;
+}
+
+export async function fetchUserByUsername(username: string): Promise<SleeperUserProfile> {
+  return fetchWithRetry(`${BASE}/user/${username}`) as Promise<SleeperUserProfile>;
+}
+
+export async function fetchUserLeagues(userId: string, season: string): Promise<SleeperLeague[]> {
+  const result = await fetchWithRetry(`${BASE}/user/${userId}/leagues/nfl/${season}`);
+  return (Array.isArray(result) ? result : []) as SleeperLeague[];
+}
