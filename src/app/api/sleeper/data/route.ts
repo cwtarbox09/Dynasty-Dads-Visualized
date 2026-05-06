@@ -111,9 +111,12 @@ export async function GET() {
       .filter((x): x is { league: SleeperLeague; i: number } => x.league !== null);
 
     // Collect all draft IDs (needed before phase 2)
+    // Skip leagues that have only a startup draft (drafts.length <= 1 means they haven't
+    // held a recurring draft yet, so their picks would skew ADP with startup-draft data)
     const allDraftIds: string[] = [];
     const draftToLeague: Record<string, string> = {};
     leagueDraftsArrays.forEach((drafts, i) => {
+      if (drafts.length <= 1) return;
       drafts.forEach((d) => {
         allDraftIds.push(d.draft_id);
         draftToLeague[d.draft_id] = LEAGUE_IDS[i];
