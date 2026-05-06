@@ -9,9 +9,6 @@ import {
   Tooltip,
   ResponsiveContainer,
   Legend,
-  ScatterChart,
-  Scatter,
-  ReferenceLine,
   Cell,
 } from "recharts";
 import type { AggregatedData } from "@/app/api/sleeper/data/route";
@@ -86,58 +83,58 @@ export default function DraftAnalytics({ data }: Props) {
 
       {/* ADP Top 40 */}
       <section className="bg-gray-900 border border-gray-800 rounded-xl p-6">
-        <h2 className="text-lg font-semibold mb-4 text-white">
+        <h2 className="text-lg font-semibold mb-1 text-white">
           Average Draft Position — Top 40 Players
         </h2>
         <p className="text-xs text-gray-400 mb-4">
           Average pick number across all leagues where the player was drafted (min 2 leagues).
         </p>
-        <ResponsiveContainer width="100%" height={420}>
-          <BarChart data={top40} layout="vertical" margin={{ left: 120, right: 30, top: 0, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" horizontal={false} />
-            <XAxis
-              type="number"
-              domain={[0, "dataMax"]}
-              tick={{ fill: "#9ca3af", fontSize: 11 }}
-              tickLine={false}
-              label={{ value: "Average Pick #", position: "insideBottom", offset: -2, fill: "#6b7280", fontSize: 11 }}
-            />
-            <YAxis
-              type="category"
-              dataKey="name"
-              width={120}
-              tick={{ fill: "#d1d5db", fontSize: 11 }}
-              tickLine={false}
-            />
-            <Tooltip
-              cursor={{ fill: "#1f2937" }}
-              content={({ active, payload }) => {
-                if (!active || !payload?.length) return null;
-                const d = payload[0].payload as (typeof top40)[0];
-                return (
-                  <div className="bg-gray-800 border border-gray-700 rounded-lg p-3 text-sm shadow-xl">
-                    <p className="font-semibold text-white">{d.name}</p>
-                    <p className="text-gray-300">{d.position} · {d.team}</p>
-                    <p className="text-blue-400">ADP: {d.avgPick}</p>
-                    <p className="text-gray-400">Range: {d.minPick}–{d.maxPick}</p>
-                    <p className="text-gray-400">Std Dev: {d.stdDev}</p>
-                    <p className="text-gray-400">Leagues: {d.picks.length}</p>
-                  </div>
-                );
-              }}
-            />
-            <Bar dataKey="avgPick" radius={[0, 4, 4, 0]}>
-              {top40.map((entry) => (
-                <Cell
-                  key={entry.player_id}
-                  fill={POSITION_COLORS[entry.position] || "#6b7280"}
-                />
-              ))}
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
+        {/* Column headers */}
+        <div className="grid grid-cols-[2rem_3rem_1fr_auto_auto_auto] gap-x-3 text-xs text-gray-500 uppercase tracking-wide pb-2 border-b border-gray-800 mb-1 pr-1">
+          <span>#</span>
+          <span>Pos</span>
+          <span>Player</span>
+          <span className="text-right">ADP</span>
+          <span className="text-right hidden sm:block">Range</span>
+          <span className="text-right hidden md:block">Leagues</span>
+        </div>
+        <div className="divide-y divide-gray-800">
+          {top40.map((p, i) => (
+            <div
+              key={p.player_id}
+              className="grid grid-cols-[2rem_3rem_1fr_auto_auto_auto] gap-x-3 items-center py-2 pr-1 hover:bg-gray-800/50 rounded transition-colors"
+            >
+              <span className="text-xs text-gray-500 tabular-nums">{i + 1}</span>
+              <span
+                className="text-xs font-bold px-1.5 py-0.5 rounded text-center"
+                style={{
+                  background: (POSITION_COLORS[p.position] || "#6b7280") + "33",
+                  color: POSITION_COLORS[p.position] || "#9ca3af",
+                }}
+              >
+                {p.position}
+              </span>
+              <div className="min-w-0">
+                <span className="text-sm text-gray-100 font-medium truncate block">{p.name}</span>
+                <span className="text-xs text-gray-500">{p.team}</span>
+              </div>
+              <span
+                className="text-sm font-bold tabular-nums text-right"
+                style={{ color: POSITION_COLORS[p.position] || "#9ca3af" }}
+              >
+                {p.avgPick}
+              </span>
+              <span className="text-xs text-gray-500 tabular-nums text-right hidden sm:block">
+                {p.minPick}–{p.maxPick}
+              </span>
+              <span className="text-xs text-gray-500 tabular-nums text-right hidden md:block">
+                {p.picks.length}
+              </span>
+            </div>
+          ))}
+        </div>
         {/* Position legend */}
-        <div className="flex flex-wrap gap-3 mt-4">
+        <div className="flex flex-wrap gap-3 mt-4 pt-4 border-t border-gray-800">
           {Object.entries(POSITION_COLORS).map(([pos, color]) => (
             <div key={pos} className="flex items-center gap-1.5 text-xs text-gray-400">
               <span className="w-3 h-3 rounded-sm inline-block" style={{ background: color }} />
