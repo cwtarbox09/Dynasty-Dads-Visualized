@@ -139,11 +139,31 @@ export async function GET() {
     // Flatten all picks
     const allPicks: DraftPick[] = allPickArrays.flat().filter(Boolean);
 
-    // Flatten all traded picks (draft level)
-    const allDraftTradedPicks: TradedPick[] = allTradedPickArrays.flat().filter(Boolean);
+    // Flatten draft-level traded picks. Sleeper's draft endpoint doesn't always
+    // include draft_id on each row, so stamp the source draft_id ourselves —
+    // we need it later to resolve roster_id → draft slot per draft.
+    const allDraftTradedPicks: TradedPick[] = allTradedPickArrays.flatMap((picks, i) =>
+      picks.filter(Boolean).map((p) => ({ ...p, draft_id: p.draft_id ?? allDraftIds[i] }))
+    );
 
     // Flatten all league-level traded picks
     const leagueTradedPicksAll: TradedPick[] = leagueTradedPicksArrays.flat().filter(Boolean);
+
+    // Build roster_id → draft slot map per draft. In Sleeper, TradedPick.roster_id
+    // is the original owner's permanent team id, NOT their draft slot. For dynasty
+    // rookie drafts the slot comes from previous-season standings (see
+    // SleeperDraft.slot_to_roster_id), so we must invert that map per draft.
+    const rosterToSlotByDraft: Record<string, Record<number, number>> = {};
+    leagueDraftsArrays.forEach((drafts) => {
+      drafts.forEach((d) => {
+        if (!isRookieDraft(d) || !d.slot_to_roster_id) return;
+        const map: Record<number, number> = {};
+        Object.entries(d.slot_to_roster_id).forEach(([slot, rosterId]) => {
+          if (rosterId != null) map[rosterId] = parseInt(slot);
+        });
+        rosterToSlotByDraft[d.draft_id] = map;
+      });
+    });
 
     // ─── 1. Player ADP ───────────────────────────────────────────────────
     const playerPickMap: Record<string, { name: string; position: string; team: string; picks: number[] }> = {};
@@ -186,12 +206,14 @@ export async function GET() {
       .sort((a, b) => a.avgPick - b.avgPick);
 
     // ─── 2. Pick Trade Heatmap ────────────────────────────────────────────
-    // Count trades by round and slot across all draft-level traded picks
+    // Count trades by round and DRAFT SLOT across all draft-level traded picks.
+    // Aggregating by roster_id collapses unrelated picks across leagues because
+    // the same roster_id sits in different draft slots in each league.
     const tradeMap: Record<string, number> = {};
     allDraftTradedPicks.forEach((tp) => {
-      if (!tp?.round) return;
-      // Use roster_id as slot proxy (1-indexed)
-      const slot = tp.roster_id;
+      if (!tp?.round || !tp.draft_id) return;
+      const slot = rosterToSlotByDraft[tp.draft_id]?.[tp.roster_id];
+      if (!slot) return;
       const key = `${tp.round}.${slot}`;
       tradeMap[key] = (tradeMap[key] || 0) + 1;
     });
@@ -209,19 +231,30 @@ export async function GET() {
     }).sort((a, b) => a.round - b.round || a.slot - b.slot);
 
     // ─── 3. Trades by round ───────────────────────────────────────────────
-    const tradesByRoundMap: Record<number, number> = {};
-    const totalPicksByRound: Record<number, number> = {};
+    // Numerator: distinct picks traded in that round (a pick traded twice = 1).
+    // Denominator: total picks that exist in that round across all rookie drafts
+    // (teams × 1 per round), independent of draft completion status.
+    const distinctTradedPicksByRound: Record<number, Set<string>> = {};
     allDraftTradedPicks.forEach((tp) => {
-      if (!tp?.round) return;
-      tradesByRoundMap[tp.round] = (tradesByRoundMap[tp.round] || 0) + 1;
+      if (!tp?.round || !tp.draft_id) return;
+      if (!distinctTradedPicksByRound[tp.round]) distinctTradedPicksByRound[tp.round] = new Set();
+      distinctTradedPicksByRound[tp.round].add(`${tp.draft_id}-${tp.roster_id}`);
     });
-    allPicks.forEach((p) => {
-      if (!p?.round) return;
-      totalPicksByRound[p.round] = (totalPicksByRound[p.round] || 0) + 1;
+    const totalPicksByRound: Record<number, number> = {};
+    leagueDraftsArrays.forEach((drafts) => {
+      drafts.forEach((d) => {
+        if (!isRookieDraft(d)) return;
+        const teams = d.settings?.teams ?? 12;
+        const rounds = d.settings?.rounds ?? 0;
+        for (let r = 1; r <= rounds; r++) {
+          totalPicksByRound[r] = (totalPicksByRound[r] || 0) + teams;
+        }
+      });
     });
-    const tradesByRound = Object.entries(tradesByRoundMap)
-      .map(([r, count]) => {
+    const tradesByRound = Object.entries(distinctTradedPicksByRound)
+      .map(([r, set]) => {
         const round = parseInt(r);
+        const count = set.size;
         const total = totalPicksByRound[round] || 1;
         return { round, count, pct: Math.round((count / total) * 100) };
       })
@@ -300,11 +333,11 @@ export async function GET() {
       .sort((a, b) => a.round - b.round);
 
     // ─── 8. Most traded pick ──────────────────────────────────────────────
-    const mostTraded = pickTradeHeatmap.sort((a, b) => b.tradeCount - a.tradeCount)[0];
+    const mostTraded = pickTradeHeatmap.reduce<PickTradeData | null>(
+      (best, p) => (!best || p.tradeCount > best.tradeCount ? p : best),
+      null,
+    );
     const mostTradedPick = mostTraded ? mostTraded.label : "N/A";
-
-    // Sort heatmap back
-    pickTradeHeatmap.sort((a, b) => a.round - b.round || a.slot - b.slot);
 
     // ─── 9. Draft completion rates ────────────────────────────────────────
     const draftCompletionRates = leagueDraftsArrays.map((drafts, i) => {
