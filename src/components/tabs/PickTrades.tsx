@@ -268,44 +268,6 @@ export default function PickTrades({ data }: Props) {
         </section>
       )}
 
-      {/* Full traded picks table */}
-      <section className="bg-gray-900 border border-gray-800 rounded-xl p-6">
-        <h2 className="text-lg font-semibold mb-2 text-white">All Traded Pick Transactions</h2>
-        <p className="text-xs text-gray-400 mb-4">
-          Every pick trade recorded across all {data.totalLeagues} leagues — sorted by round.
-        </p>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-xs text-gray-500 border-b border-gray-800">
-                <th className="text-left py-2 pr-4">Season</th>
-                <th className="text-left py-2 pr-4">Round</th>
-                <th className="text-left py-2 pr-4">Original Owner</th>
-                <th className="text-left py-2 pr-4">Previous Owner</th>
-                <th className="text-left py-2">New Owner</th>
-              </tr>
-            </thead>
-            <tbody>
-              {leagueTradedPicksAll.slice(0, 100).map((tp, i) => (
-                <tr key={i} className="border-b border-gray-800/50 hover:bg-gray-800/30">
-                  <td className="py-1.5 pr-4 text-gray-300">{tp.season}</td>
-                  <td className="py-1.5 pr-4">
-                    <span className="bg-blue-900/40 text-blue-300 text-xs px-2 py-0.5 rounded">Rd {tp.round}</span>
-                  </td>
-                  <td className="py-1.5 pr-4 text-gray-400 font-mono text-xs">#{tp.roster_id}</td>
-                  <td className="py-1.5 pr-4 text-gray-400 font-mono text-xs">#{tp.previous_owner_id}</td>
-                  <td className="py-1.5 text-gray-300 font-mono text-xs">#{tp.owner_id}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {leagueTradedPicksAll.length > 100 && (
-            <p className="text-xs text-gray-500 mt-3">
-              Showing 100 of {leagueTradedPicksAll.length} transactions
-            </p>
-          )}
-        </div>
-      </section>
     </div>
   );
 }

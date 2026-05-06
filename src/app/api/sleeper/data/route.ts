@@ -139,8 +139,13 @@ export async function GET() {
     // Collect 2026 rookie draft IDs only. Filter by rounds: rookie drafts are 4–5
     // (max 7 for SF formats); startup drafts are 15+. Season alone is insufficient
     // because a league whose startup ran in 2026 would otherwise contaminate the data.
+    // Only include drafts that started on/after April 20, 2026 (or not yet started).
+    const APRIL_20_2026_MS = 1776643200000;
     const isRookieDraft = (d: SleeperDraft) =>
-      d.season === '2026' && d.settings?.rounds <= 7;
+      d.season === '2026' &&
+      d.settings?.rounds != null &&
+      d.settings.rounds <= 7 &&
+      (!d.start_time || d.start_time >= APRIL_20_2026_MS);
 
     const allDraftIds: string[] = [];
     const draftToLeague: Record<string, string> = {};
@@ -189,6 +194,19 @@ export async function GET() {
         });
         rosterToSlotByDraft[d.draft_id] = map;
       });
+    });
+
+    // Fallback: when slot_to_roster_id is absent, derive roster→slot from actual
+    // picks (each DraftPick carries draft_slot directly).
+    allPickArrays.forEach((picks, i) => {
+      const draftId = allDraftIds[i];
+      if (rosterToSlotByDraft[draftId]) return;
+      const map: Record<number, number> = {};
+      picks.forEach((p) => {
+        const rosterId = parseInt(p.roster_id);
+        if (rosterId && p.draft_slot) map[rosterId] = p.draft_slot;
+      });
+      if (Object.keys(map).length > 0) rosterToSlotByDraft[draftId] = map;
     });
 
     // ─── 1. Player ADP ───────────────────────────────────────────────────
