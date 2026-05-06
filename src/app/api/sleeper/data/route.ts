@@ -110,15 +110,17 @@ export async function GET() {
       .map((league, i) => ({ league, i }))
       .filter((x): x is { league: SleeperLeague; i: number } => x.league !== null);
 
-    // Collect all draft IDs (needed before phase 2)
-    // Skip leagues that have only a startup draft (drafts.length <= 1 means they haven't
-    // held a recurring draft yet, so their picks would skew ADP with startup-draft data)
+    // Collect 2026 rookie draft IDs only. Filter by rounds: rookie drafts are 4–5
+    // (max 7 for SF formats); startup drafts are 15+. Season alone is insufficient
+    // because a league whose startup ran in 2026 would otherwise contaminate the data.
+    const isRookieDraft = (d: SleeperDraft) =>
+      d.season === '2026' && d.settings?.rounds <= 7;
+
     const allDraftIds: string[] = [];
     const draftToLeague: Record<string, string> = {};
     leagueDraftsArrays.forEach((drafts, i) => {
-      if (drafts.length <= 1) return;
       drafts.forEach((d) => {
-        if (d.season !== '2026') return;
+        if (!isRookieDraft(d)) return;
         allDraftIds.push(d.draft_id);
         draftToLeague[d.draft_id] = LEAGUE_IDS[i];
       });
@@ -306,7 +308,7 @@ export async function GET() {
 
     // ─── 9. Draft completion rates ────────────────────────────────────────
     const draftCompletionRates = leagueDraftsArrays.map((drafts, i) => {
-      const rookieDraft = drafts.find((d) => d.season === '2026');
+      const rookieDraft = drafts.find(isRookieDraft);
       return {
         leagueId: LEAGUE_IDS[i],
         name: leagueResults[i]?.name || LEAGUE_IDS[i],
