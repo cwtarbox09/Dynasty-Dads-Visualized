@@ -115,7 +115,7 @@ export async function GET() {
     const draftToLeague: Record<string, string> = {};
     leagueDraftsArrays.forEach((drafts, i) => {
       drafts.forEach((d) => {
-        if (d.type !== 'rookie' || d.season !== '2026') return;
+        if (d.season !== '2026') return;
         allDraftIds.push(d.draft_id);
         draftToLeague[d.draft_id] = LEAGUE_IDS[i];
       });
@@ -303,7 +303,7 @@ export async function GET() {
 
     // ─── 9. Draft completion rates ────────────────────────────────────────
     const draftCompletionRates = leagueDraftsArrays.map((drafts, i) => {
-      const rookieDraft = drafts.find((d) => d.type === 'rookie' && d.season === '2026');
+      const rookieDraft = drafts.find((d) => d.season === '2026');
       return {
         leagueId: LEAGUE_IDS[i],
         name: leagueResults[i]?.name || LEAGUE_IDS[i],
