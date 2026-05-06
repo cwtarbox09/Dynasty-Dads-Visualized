@@ -19,6 +19,32 @@ import {
   type SleeperDraft,
 } from "@/lib/sleeper";
 
+// Cap parallel Sleeper requests so we don't saturate Node's HTTP agent (default
+// 6 sockets/origin) or trip Sleeper's rate limiter. Firing ~200 fetches at once
+// was causing cold-start gateway timeouts (504).
+const SLEEPER_CONCURRENCY = 12;
+
+async function pMap<T, R>(
+  items: T[],
+  fn: (item: T) => Promise<R>,
+  concurrency: number,
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let cursor = 0;
+  const workers = Array.from(
+    { length: Math.min(concurrency, items.length) },
+    async () => {
+      while (true) {
+        const idx = cursor++;
+        if (idx >= items.length) return;
+        results[idx] = await fn(items[idx]);
+      }
+    },
+  );
+  await Promise.all(workers);
+  return results;
+}
+
 export interface PlayerADP {
   player_id: string;
   name: string;
@@ -101,8 +127,8 @@ export async function GET() {
   try {
     // Phase 1: leagues + drafts fire together; individual failures fall back to null/[]
     const [leagueResults, leagueDraftsArrays] = await Promise.all([
-      Promise.all(LEAGUE_IDS.map((id) => fetchLeague(id).catch(() => null))),
-      Promise.all(LEAGUE_IDS.map((id) => safeArr(fetchLeagueDrafts(id)))),
+      pMap(LEAGUE_IDS, (id) => fetchLeague(id).catch(() => null), SLEEPER_CONCURRENCY),
+      pMap(LEAGUE_IDS, (id) => safeArr(fetchLeagueDrafts(id)), SLEEPER_CONCURRENCY),
     ]);
 
     // Pair each league with its index so we can skip nulls while keeping alignment
@@ -127,11 +153,11 @@ export async function GET() {
     // Phase 2: all remaining data fires simultaneously; each fetch is independently resilient
     const [allPickArrays, allTradedPickArrays, leagueTradedPicksArrays, rostersArrays, usersArrays] =
       await Promise.all([
-        Promise.all(allDraftIds.map((id) => safeArr(fetchDraftPicks(id)))),
-        Promise.all(allDraftIds.map((id) => safeArr(fetchDraftTradedPicks(id)))),
-        Promise.all(LEAGUE_IDS.map((id) => safeArr(fetchLeagueTradedPicks(id)))),
-        Promise.all(LEAGUE_IDS.map((id) => safeArr(fetchLeagueRosters(id)))),
-        Promise.all(LEAGUE_IDS.map((id) => safeArr(fetchLeagueUsers(id)))),
+        pMap(allDraftIds, (id) => safeArr(fetchDraftPicks(id)), SLEEPER_CONCURRENCY),
+        pMap(allDraftIds, (id) => safeArr(fetchDraftTradedPicks(id)), SLEEPER_CONCURRENCY),
+        pMap(LEAGUE_IDS, (id) => safeArr(fetchLeagueTradedPicks(id)), SLEEPER_CONCURRENCY),
+        pMap(LEAGUE_IDS, (id) => safeArr(fetchLeagueRosters(id)), SLEEPER_CONCURRENCY),
+        pMap(LEAGUE_IDS, (id) => safeArr(fetchLeagueUsers(id)), SLEEPER_CONCURRENCY),
       ]);
 
     // Flatten all picks

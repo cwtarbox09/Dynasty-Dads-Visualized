@@ -114,17 +114,31 @@ export interface SleeperUser {
   };
 }
 
-async function fetchWithRetry(url: string, retries = 3): Promise<unknown> {
+// Per-request hard cap so one slow Sleeper endpoint can't drag the whole route
+// past Vercel's gateway timeout (504). Total worst case: PER_REQUEST_TIMEOUT_MS *
+// (retries + 1) + backoff sum.
+const PER_REQUEST_TIMEOUT_MS = 7000;
+
+async function fetchWithRetry(url: string, retries = 2): Promise<unknown> {
+  let lastErr: unknown;
   for (let i = 0; i <= retries; i++) {
     try {
-      const res = await fetch(url, { next: { revalidate: 3600 } });
+      const res = await fetch(url, {
+        // Next 16 no longer caches fetch by default; force-cache + revalidate
+        // opts the data cache back in so warm requests don't refetch upstream.
+        cache: "force-cache",
+        next: { revalidate: 3600 },
+        signal: AbortSignal.timeout(PER_REQUEST_TIMEOUT_MS),
+      });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return res.json();
     } catch (err) {
-      if (i === retries) throw err;
-      await new Promise((r) => setTimeout(r, 500 * (i + 1)));
+      lastErr = err;
+      if (i === retries) break;
+      await new Promise((r) => setTimeout(r, 250 * (i + 1)));
     }
   }
+  throw lastErr;
 }
 
 export async function fetchLeague(leagueId: string): Promise<SleeperLeague> {
