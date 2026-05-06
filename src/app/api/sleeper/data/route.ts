@@ -11,13 +11,16 @@ import {
   fetchLeagueRosters,
   fetchLeagueUsers,
   fetchLeagueTradedPicks,
+  pMap,
   type DraftPick,
   type TradedPick,
   type SleeperLeague,
   type SleeperRoster,
   type SleeperUser,
-  type SleeperDraft,
 } from "@/lib/sleeper";
+
+// Current rookie-draft season. Sleeper league/draft seasons are strings.
+const CURRENT_SEASON = String(new Date().getFullYear());
 
 export interface PlayerADP {
   player_id: string;
@@ -99,10 +102,11 @@ function safeArr<T>(promise: Promise<T[] | null>): Promise<T[]> {
 
 export async function GET() {
   try {
-    // Phase 1: leagues + drafts fire together; individual failures fall back to null/[]
+    // Phase 1: leagues + drafts. Cap concurrency so we don't open ~70 sockets
+    // to Sleeper at once — that's what was timing out and producing 504s.
     const [leagueResults, leagueDraftsArrays] = await Promise.all([
-      Promise.all(LEAGUE_IDS.map((id) => fetchLeague(id).catch(() => null))),
-      Promise.all(LEAGUE_IDS.map((id) => safeArr(fetchLeagueDrafts(id)))),
+      pMap(LEAGUE_IDS, (id) => fetchLeague(id).catch(() => null)),
+      pMap(LEAGUE_IDS, (id) => safeArr(fetchLeagueDrafts(id))),
     ]);
 
     // Pair each league with its index so we can skip nulls while keeping alignment
@@ -110,28 +114,32 @@ export async function GET() {
       .map((league, i) => ({ league, i }))
       .filter((x): x is { league: SleeperLeague; i: number } => x.league !== null);
 
-    // Collect all draft IDs (needed before phase 2)
-    // Skip leagues that have only a startup draft (drafts.length <= 1 means they haven't
-    // held a recurring draft yet, so their picks would skew ADP with startup-draft data)
+    // Collect rookie draft IDs for the current season.
+    // Sleeper returns drafts newest-first; the oldest entry is the league's
+    // startup. We exclude that and any other non-current-season drafts so the
+    // analytics only reflect *this year's* rookie drafts.
     const allDraftIds: string[] = [];
     const draftToLeague: Record<string, string> = {};
     leagueDraftsArrays.forEach((drafts, i) => {
-      if (drafts.length <= 1) return;
-      drafts.forEach((d) => {
-        if (d.season !== '2026') return;
+      if (drafts.length === 0) return;
+      // drafts[drafts.length - 1] is the league's startup draft — skip it.
+      const rookieDrafts = drafts.slice(0, -1);
+      rookieDrafts.forEach((d) => {
+        if (d.season !== CURRENT_SEASON) return;
         allDraftIds.push(d.draft_id);
         draftToLeague[d.draft_id] = LEAGUE_IDS[i];
       });
     });
 
-    // Phase 2: all remaining data fires simultaneously; each fetch is independently resilient
+    // Phase 2: pick/trade/roster/user fetches. Single concurrency-limited
+    // pool across all of them so total in-flight requests stay bounded.
     const [allPickArrays, allTradedPickArrays, leagueTradedPicksArrays, rostersArrays, usersArrays] =
       await Promise.all([
-        Promise.all(allDraftIds.map((id) => safeArr(fetchDraftPicks(id)))),
-        Promise.all(allDraftIds.map((id) => safeArr(fetchDraftTradedPicks(id)))),
-        Promise.all(LEAGUE_IDS.map((id) => safeArr(fetchLeagueTradedPicks(id)))),
-        Promise.all(LEAGUE_IDS.map((id) => safeArr(fetchLeagueRosters(id)))),
-        Promise.all(LEAGUE_IDS.map((id) => safeArr(fetchLeagueUsers(id)))),
+        pMap(allDraftIds, (id) => safeArr(fetchDraftPicks(id))),
+        pMap(allDraftIds, (id) => safeArr(fetchDraftTradedPicks(id))),
+        pMap(LEAGUE_IDS, (id) => safeArr(fetchLeagueTradedPicks(id))),
+        pMap(LEAGUE_IDS, (id) => safeArr(fetchLeagueRosters(id))),
+        pMap(LEAGUE_IDS, (id) => safeArr(fetchLeagueUsers(id))),
       ]);
 
     // Flatten all picks
@@ -306,7 +314,10 @@ export async function GET() {
 
     // ─── 9. Draft completion rates ────────────────────────────────────────
     const draftCompletionRates = leagueDraftsArrays.map((drafts, i) => {
-      const rookieDraft = drafts.find((d) => d.season === '2026');
+      // Same rookie filter as above: drop the startup, keep current-season drafts.
+      const rookieDraft = drafts
+        .slice(0, -1)
+        .find((d) => d.season === CURRENT_SEASON);
       return {
         leagueId: LEAGUE_IDS[i],
         name: leagueResults[i]?.name || LEAGUE_IDS[i],

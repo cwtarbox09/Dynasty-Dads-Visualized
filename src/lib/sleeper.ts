@@ -114,15 +114,28 @@ export interface SleeperUser {
   };
 }
 
-async function fetchWithRetry(url: string, retries = 3): Promise<unknown> {
+const REQUEST_TIMEOUT_MS = 6000;
+const MAX_RETRIES = 2;
+
+async function fetchWithRetry(url: string, retries = MAX_RETRIES): Promise<unknown> {
   for (let i = 0; i <= retries; i++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     try {
-      const res = await fetch(url, { next: { revalidate: 3600 } });
+      const res = await fetch(url, {
+        next: { revalidate: 3600 },
+        signal: controller.signal,
+      });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return res.json();
+      return await res.json();
     } catch (err) {
       if (i === retries) throw err;
-      await new Promise((r) => setTimeout(r, 500 * (i + 1)));
+      // Jittered backoff so retries from concurrent calls don't thunder.
+      const base = 400 * (i + 1);
+      const jitter = Math.floor(Math.random() * 250);
+      await new Promise((r) => setTimeout(r, base + jitter));
+    } finally {
+      clearTimeout(timer);
     }
   }
 }
@@ -153,4 +166,26 @@ export async function fetchDraftTradedPicks(draftId: string): Promise<TradedPick
 
 export async function fetchLeagueTradedPicks(leagueId: string): Promise<TradedPick[]> {
   return fetchWithRetry(`${BASE}/league/${leagueId}/traded_picks`) as Promise<TradedPick[]>;
+}
+
+// Run an async map with a concurrency cap, preserving input order.
+// Sleeper's API rate-limits and slows down when hit with hundreds of
+// simultaneous connections from the same IP, which is the main cause of the
+// 504s — capping in-flight requests keeps the function inside its budget.
+export async function pMap<T, R>(
+  items: readonly T[],
+  fn: (item: T, index: number) => Promise<R>,
+  concurrency = 8,
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let cursor = 0;
+  const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (true) {
+      const i = cursor++;
+      if (i >= items.length) return;
+      results[i] = await fn(items[i], i);
+    }
+  });
+  await Promise.all(workers);
+  return results;
 }
