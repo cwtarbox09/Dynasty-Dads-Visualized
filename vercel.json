@@ -1,7 +1,1 @@
-{
-  "functions": {
-    "src/app/api/sleeper/data/route.ts": {
-      "maxDuration": 60
-    }
-  }
-}
+{}

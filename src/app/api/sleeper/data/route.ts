@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+
+export const maxDuration = 60;
 import { LEAGUE_IDS } from "@/lib/constants";
 import {
   fetchLeague,
