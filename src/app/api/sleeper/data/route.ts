@@ -8,14 +8,10 @@ import {
   fetchLeagueDrafts,
   fetchDraftPicks,
   fetchDraftTradedPicks,
-  fetchLeagueRosters,
-  fetchLeagueUsers,
   fetchLeagueTradedPicks,
   type DraftPick,
   type TradedPick,
   type SleeperLeague,
-  type SleeperRoster,
-  type SleeperUser,
   type SleeperDraft,
 } from "@/lib/sleeper";
 
@@ -52,8 +48,12 @@ export interface PlayerADP {
   team: string;
   picks: number[];
   avgPick: number;
+  avgRound: number;
+  avgSlot: number;
   minPick: number;
   maxPick: number;
+  minLabel: string;
+  maxLabel: string;
   stdDev: number;
   timesTop5: number;
   timesTop10: number;
@@ -77,35 +77,16 @@ export interface PositionRoundData {
   Other: number;
 }
 
-export interface LeagueStanding {
-  league_id: string;
-  league_name: string;
-  season: string;
-  teams: number;
-  rosters: {
-    roster_id: number;
-    wins: number;
-    losses: number;
-    ties: number;
-    fpts: number;
-    fpts_against: number;
-    rank: number;
-    owner_name: string;
-    team_name: string;
-  }[];
-}
-
 export interface AggregatedData {
   playerADPs: PlayerADP[];
   pickTradeHeatmap: PickTradeData[];
   tradesByRound: { round: number; count: number; pct: number }[];
   positionByRound: PositionRoundData[];
-  leagueStandings: LeagueStanding[];
   totalLeagues: number;
   totalPicks: number;
   totalTrades: number;
   mostTradedPick: string;
-  topPicksByPosition: Record<string, { name: string; avgPick: number; pickCount: number }[]>;
+  topPicksByPosition: Record<string, { name: string; avgPick: number; avgRound: number; avgSlot: number; pickCount: number }[]>;
   draftCompletionRates: { leagueId: string; name: string; status: string }[];
   roundTradeVolume: { round: number; count: number }[];
   leagueTradedPicksAll: TradedPick[];
@@ -158,13 +139,11 @@ export async function GET() {
     });
 
     // Phase 2: all remaining data fires simultaneously; each fetch is independently resilient
-    const [allPickArrays, allTradedPickArrays, leagueTradedPicksArrays, rostersArrays, usersArrays] =
+    const [allPickArrays, allTradedPickArrays, leagueTradedPicksArrays] =
       await Promise.all([
         pMap(allDraftIds, (id) => safeArr(fetchDraftPicks(id)), SLEEPER_CONCURRENCY),
         pMap(allDraftIds, (id) => safeArr(fetchDraftTradedPicks(id)), SLEEPER_CONCURRENCY),
         pMap(LEAGUE_IDS, (id) => safeArr(fetchLeagueTradedPicks(id)), SLEEPER_CONCURRENCY),
-        pMap(LEAGUE_IDS, (id) => safeArr(fetchLeagueRosters(id)), SLEEPER_CONCURRENCY),
-        pMap(LEAGUE_IDS, (id) => safeArr(fetchLeagueUsers(id)), SLEEPER_CONCURRENCY),
       ]);
 
     // Flatten all picks
@@ -210,11 +189,11 @@ export async function GET() {
     });
 
     // ─── 1. Player ADP ───────────────────────────────────────────────────
-    const playerPickMap: Record<string, { name: string; position: string; team: string; picks: number[] }> = {};
+    const playerPickMap: Record<string, { name: string; position: string; team: string; picks: { round: number; slot: number; pick_no: number }[] }> = {};
 
     allPicks.forEach((pick) => {
       if (!pick?.player_id || !pick?.metadata) return;
-      const { player_id, pick_no, metadata } = pick;
+      const { player_id, pick_no, round, draft_slot, metadata } = pick;
       const name = `${metadata.first_name} ${metadata.last_name}`.trim();
       if (!name || name.trim() === "") return;
       if (!playerPickMap[player_id]) {
@@ -225,26 +204,35 @@ export async function GET() {
           picks: [],
         };
       }
-      playerPickMap[player_id].picks.push(pick_no);
+      playerPickMap[player_id].picks.push({ round, slot: draft_slot, pick_no });
     });
 
     const playerADPs: PlayerADP[] = Object.entries(playerPickMap)
       .filter(([, d]) => d.picks.length >= 2)
       .map(([player_id, d]) => {
-        const sorted = [...d.picks].sort((a, b) => a - b);
-        const avg = d.picks.reduce((a, b) => a + b, 0) / d.picks.length;
+        const pickNos = d.picks.map((p) => p.pick_no);
+        const sortedByPickNo = [...d.picks].sort((a, b) => a.pick_no - b.pick_no);
+        const avg = pickNos.reduce((a, b) => a + b, 0) / pickNos.length;
+        const avgRound = Math.round(d.picks.reduce((a, b) => a + b.round, 0) / d.picks.length);
+        const avgSlot = Math.round(d.picks.reduce((a, b) => a + b.slot, 0) / d.picks.length);
+        const minPickInfo = sortedByPickNo[0];
+        const maxPickInfo = sortedByPickNo[sortedByPickNo.length - 1];
         return {
           player_id,
           name: d.name,
           position: d.position,
           team: d.team,
-          picks: d.picks,
+          picks: pickNos,
           avgPick: Math.round(avg * 10) / 10,
-          minPick: sorted[0],
-          maxPick: sorted[sorted.length - 1],
-          stdDev: Math.round(stdDev(d.picks) * 10) / 10,
-          timesTop5: d.picks.filter((p) => p <= 5).length,
-          timesTop10: d.picks.filter((p) => p <= 10).length,
+          avgRound,
+          avgSlot,
+          minPick: minPickInfo.pick_no,
+          maxPick: maxPickInfo.pick_no,
+          minLabel: `${minPickInfo.round}.${String(minPickInfo.slot).padStart(2, "0")}`,
+          maxLabel: `${maxPickInfo.round}.${String(maxPickInfo.slot).padStart(2, "0")}`,
+          stdDev: Math.round(stdDev(pickNos) * 10) / 10,
+          timesTop5: pickNos.filter((p) => p <= 5).length,
+          timesTop10: pickNos.filter((p) => p <= 10).length,
         };
       })
       .sort((a, b) => a.avgPick - b.avgPick);
@@ -326,47 +314,16 @@ export async function GET() {
         Other: positions.Other || 0,
       }));
 
-    // ─── 5. League Standings ──────────────────────────────────────────────
-    const leagueStandings: LeagueStanding[] = validLeagues.map(({ league, i }) => {
-      const rosters = rostersArrays[i] || [];
-      const users = usersArrays[i] || [];
-      const userMap: Record<string, SleeperUser> = {};
-      users.forEach((u) => { userMap[u.user_id] = u; });
-
-      const rosterData = rosters.map((r) => {
-        const owner = userMap[r.owner_id];
-        return {
-          roster_id: r.roster_id,
-          wins: r.settings?.wins || 0,
-          losses: r.settings?.losses || 0,
-          ties: r.settings?.ties || 0,
-          fpts: (r.settings?.fpts || 0) + (r.settings?.fpts_decimal || 0) / 100,
-          fpts_against: (r.settings?.fpts_against || 0) + (r.settings?.fpts_against_decimal || 0) / 100,
-          rank: r.settings?.rank || 0,
-          owner_name: owner?.display_name || "Unknown",
-          team_name: owner?.metadata?.team_name || owner?.display_name || "Team " + r.roster_id,
-        };
-      }).sort((a, b) => b.wins - a.wins || b.fpts - a.fpts);
-
-      return {
-        league_id: league.league_id,
-        league_name: league.name,
-        season: league.season,
-        teams: league.total_rosters,
-        rosters: rosterData,
-      };
-    });
-
-    // ─── 6. Top picks by position ─────────────────────────────────────────
-    const topPicksByPosition: Record<string, { name: string; avgPick: number; pickCount: number }[]> = {};
+    // ─── 5. Top picks by position ─────────────────────────────────────────
+    const topPicksByPosition: Record<string, { name: string; avgPick: number; avgRound: number; avgSlot: number; pickCount: number }[]> = {};
     ["QB", "RB", "WR", "TE"].forEach((pos) => {
       topPicksByPosition[pos] = playerADPs
         .filter((p) => p.position === pos)
         .slice(0, 15)
-        .map((p) => ({ name: p.name, avgPick: p.avgPick, pickCount: p.picks.length }));
+        .map((p) => ({ name: p.name, avgPick: p.avgPick, avgRound: p.avgRound, avgSlot: p.avgSlot, pickCount: p.picks.length }));
     });
 
-    // ─── 7. Round trade volume (league-level, includes future picks) ──────
+    // ─── 6. Round trade volume (league-level, includes future picks) ──────
     const roundTradeVolumeMap: Record<number, number> = {};
     leagueTradedPicksAll.forEach((tp) => {
       if (!tp?.round) return;
@@ -376,14 +333,14 @@ export async function GET() {
       .map(([r, count]) => ({ round: parseInt(r), count }))
       .sort((a, b) => a.round - b.round);
 
-    // ─── 8. Most traded pick ──────────────────────────────────────────────
+    // ─── 7. Most traded pick ──────────────────────────────────────────────
     const mostTraded = pickTradeHeatmap.reduce<PickTradeData | null>(
       (best, p) => (!best || p.tradeCount > best.tradeCount ? p : best),
       null,
     );
     const mostTradedPick = mostTraded ? mostTraded.label : "N/A";
 
-    // ─── 9. Draft completion rates ────────────────────────────────────────
+    // ─── 8. Draft completion rates ────────────────────────────────────────
     const draftCompletionRates = leagueDraftsArrays.map((drafts, i) => {
       const rookieDraft = drafts.find(isRookieDraft);
       return {
@@ -398,7 +355,6 @@ export async function GET() {
       pickTradeHeatmap,
       tradesByRound,
       positionByRound,
-      leagueStandings,
       totalLeagues: validLeagues.length,
       totalPicks: allPicks.length,
       totalTrades: allDraftTradedPicks.length,

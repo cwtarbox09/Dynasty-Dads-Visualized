@@ -4,13 +4,11 @@ import { useEffect, useState } from "react";
 import type { AggregatedData } from "@/app/api/sleeper/data/route";
 import DraftAnalytics from "@/components/tabs/DraftAnalytics";
 import PickTrades from "@/components/tabs/PickTrades";
-import LeagueStandings from "@/components/tabs/LeagueStandings";
 import FunStats from "@/components/tabs/FunStats";
 
 const TABS = [
   { id: "draft", label: "Draft Analytics" },
   { id: "picks", label: "Pick Trades" },
-  { id: "standings", label: "Standings" },
   { id: "fun", label: "Fun Stats" },
 ] as const;
 
@@ -124,7 +122,6 @@ export default function Home() {
           <>
             {tab === "draft" && <DraftAnalytics data={data} />}
             {tab === "picks" && <PickTrades data={data} />}
-            {tab === "standings" && <LeagueStandings data={data} />}
             {tab === "fun" && <FunStats data={data} />}
           </>
         )}

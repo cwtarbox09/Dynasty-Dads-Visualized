@@ -30,6 +30,10 @@ function StatCard({ label, value, sub }: { label: string; value: string | number
 
 const POSITION_ORDER = ["QB", "RB", "WR", "TE"];
 
+function pickLabel(round: number, slot: number): string {
+  return `${round}.${String(slot).padStart(2, "0")}`;
+}
+
 export default function DraftAnalytics({ data }: Props) {
   const { playerADPs, positionByRound, topPicksByPosition } = data;
 
@@ -72,7 +76,7 @@ export default function DraftAnalytics({ data }: Props) {
         <StatCard
           label="Most Picked Player"
           value={playerADPs[0]?.name || "—"}
-          sub={`ADP ${playerADPs[0]?.avgPick} · ${playerADPs[0]?.picks.length} leagues`}
+          sub={playerADPs[0] ? `${pickLabel(playerADPs[0].avgRound, playerADPs[0].avgSlot)} · ${playerADPs[0].picks.length} leagues` : undefined}
         />
         <StatCard
           label="Most Consensus Pick"
@@ -94,7 +98,7 @@ export default function DraftAnalytics({ data }: Props) {
           <span>#</span>
           <span>Pos</span>
           <span>Player</span>
-          <span className="text-right">ADP</span>
+          <span className="text-right">Pick</span>
           <span className="text-right hidden sm:block">Range</span>
           <span className="text-right hidden md:block">Leagues</span>
         </div>
@@ -122,10 +126,10 @@ export default function DraftAnalytics({ data }: Props) {
                 className="text-sm font-bold tabular-nums text-right"
                 style={{ color: POSITION_COLORS[p.position] || "#9ca3af" }}
               >
-                {p.avgPick}
+                {pickLabel(p.avgRound, p.avgSlot)}
               </span>
               <span className="text-xs text-gray-500 tabular-nums text-right hidden sm:block">
-                {p.minPick}–{p.maxPick}
+                {p.minLabel}–{p.maxLabel}
               </span>
               <span className="text-xs text-gray-500 tabular-nums text-right hidden md:block">
                 {p.picks.length}
@@ -226,7 +230,7 @@ export default function DraftAnalytics({ data }: Props) {
                 </div>
                 <div className="text-right">
                   <p className="text-sm font-semibold text-green-400">σ {p.stdDev}</p>
-                  <p className="text-xs text-gray-500">ADP {p.avgPick}</p>
+                  <p className="text-xs text-gray-500">{pickLabel(p.avgRound, p.avgSlot)}</p>
                 </div>
               </div>
             ))}
@@ -256,7 +260,7 @@ export default function DraftAnalytics({ data }: Props) {
                         <span className="text-xs text-gray-300">{p.name}</span>
                       </div>
                       <div className="text-right">
-                        <span className="text-xs text-gray-400">ADP {p.avgPick}</span>
+                        <span className="text-xs text-gray-400">{pickLabel(p.avgRound, p.avgSlot)}</span>
                         <span className="text-xs text-gray-600 ml-2">({p.pickCount})</span>
                       </div>
                     </div>

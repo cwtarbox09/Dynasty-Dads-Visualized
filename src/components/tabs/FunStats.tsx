@@ -20,8 +20,12 @@ interface Props {
   data: AggregatedData;
 }
 
+function pickLabel(round: number, slot: number): string {
+  return `${round}.${String(slot).padStart(2, "0")}`;
+}
+
 export default function FunStats({ data }: Props) {
-  const { playerADPs, leagueStandings, totalPicks, totalLeagues } = data;
+  const { playerADPs, totalPicks, totalLeagues } = data;
 
   // Longest player names
   const longestNames = [...playerADPs]
@@ -79,15 +83,6 @@ export default function FunStats({ data }: Props) {
     .filter((p) => p.picks.length >= 5 && p.avgPick >= 40)
     .sort((a, b) => b.stdDev - a.stdDev)
     .slice(0, 10);
-
-  // Draft pick efficiency: leagues with most picks per roster slot
-  const draftEfficiency = leagueStandings
-    .map((l) => ({
-      name: l.league_name.length > 20 ? l.league_name.slice(0, 20) + "…" : l.league_name,
-      teams: l.teams,
-    }))
-    .sort((a, b) => b.teams - a.teams)
-    .slice(0, 15);
 
   // Best value picks: lowest average pick for players who rarely go in top 10 but sometimes do
   const hiddenGems = [...playerADPs]
@@ -188,8 +183,8 @@ export default function FunStats({ data }: Props) {
                   <span className="text-xs text-gray-300">{p.name}</span>
                 </div>
                 <div className="text-right">
-                  <p className="text-xs text-green-400">Best: #{p.minPick}</p>
-                  <p className="text-xs text-gray-500">Avg: {p.avgPick}</p>
+                  <p className="text-xs text-green-400">Best: {p.minLabel}</p>
+                  <p className="text-xs text-gray-500">Avg: {pickLabel(p.avgRound, p.avgSlot)}</p>
                 </div>
               </div>
             ))}
@@ -213,7 +208,7 @@ export default function FunStats({ data }: Props) {
                   <span className="text-xs text-gray-300">{p.name}</span>
                 </div>
                 <div className="text-right">
-                  <p className="text-xs text-amber-400">ADP {p.avgPick}</p>
+                  <p className="text-xs text-amber-400">{pickLabel(p.avgRound, p.avgSlot)}</p>
                   <p className="text-xs text-gray-500">σ {p.stdDev}</p>
                 </div>
               </div>
@@ -238,7 +233,7 @@ export default function FunStats({ data }: Props) {
                   <span className="text-xs text-gray-300">{p.name}</span>
                 </div>
                 <div className="text-right">
-                  <p className="text-xs text-purple-400">ADP {p.avgPick}</p>
+                  <p className="text-xs text-purple-400">{pickLabel(p.avgRound, p.avgSlot)}</p>
                   <p className="text-xs text-gray-500">σ {p.stdDev}</p>
                 </div>
               </div>
@@ -263,7 +258,7 @@ export default function FunStats({ data }: Props) {
                 {p.position}
               </span>
               <p className="text-sm font-semibold text-white mt-2">{p.name}</p>
-              <p className="text-xs text-gray-400 mt-1">ADP {p.avgPick}</p>
+              <p className="text-xs text-gray-400 mt-1">{pickLabel(p.avgRound, p.avgSlot)}</p>
               <p className="text-xs text-gray-500">{p.picks.length}/{totalLeagues} leagues</p>
             </div>
           ))}
