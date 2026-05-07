@@ -94,7 +94,7 @@ export default function DraftAnalytics({ data }: Props) {
           Average pick number across all leagues where the player was drafted (min 2 leagues).
         </p>
         {/* Column headers */}
-        <div className="grid grid-cols-[2rem_3rem_1fr_auto_auto_auto_auto] gap-x-3 text-xs text-gray-500 uppercase tracking-wide pb-2 border-b border-gray-800 mb-1 pr-1">
+        <div className="grid grid-cols-[2rem_3rem_1fr_auto] sm:grid-cols-[2rem_3rem_1fr_auto_auto_auto_auto] gap-x-3 text-xs text-gray-500 uppercase tracking-wide pb-2 border-b border-gray-800 mb-1 pr-1">
           <span>#</span>
           <span>Pos</span>
           <span>Player</span>
@@ -107,7 +107,7 @@ export default function DraftAnalytics({ data }: Props) {
           {top40.map((p, i) => (
             <div
               key={p.player_id}
-              className="grid grid-cols-[2rem_3rem_1fr_auto_auto_auto_auto] gap-x-3 items-center py-2 pr-1 hover:bg-gray-800/50 rounded transition-colors"
+              className="grid grid-cols-[2rem_3rem_1fr_auto] sm:grid-cols-[2rem_3rem_1fr_auto_auto_auto_auto] gap-x-3 items-center py-2 pr-1 hover:bg-gray-800/50 rounded transition-colors"
             >
               <span className="text-xs text-gray-500 tabular-nums">{i + 1}</span>
               <span
@@ -123,12 +123,17 @@ export default function DraftAnalytics({ data }: Props) {
                 <span className="text-sm text-gray-100 font-medium truncate block">{p.name}</span>
                 <span className="text-xs text-gray-500">{p.team}</span>
               </div>
-              <span
-                className="text-sm font-bold tabular-nums text-right"
-                style={{ color: POSITION_COLORS[p.position] || "#9ca3af" }}
-              >
-                {pickLabel(p.avgRound, p.avgSlot)}
-              </span>
+              <div className="text-right">
+                <span
+                  className="text-sm font-bold tabular-nums block"
+                  style={{ color: POSITION_COLORS[p.position] || "#9ca3af" }}
+                >
+                  {pickLabel(p.avgRound, p.avgSlot)}
+                </span>
+                <span className="text-xs text-gray-500 tabular-nums sm:hidden">
+                  {p.minLabel}–{p.maxLabel}
+                </span>
+              </div>
               <span className="text-xs text-gray-500 tabular-nums text-right hidden sm:block">
                 {p.minLabel}
               </span>
