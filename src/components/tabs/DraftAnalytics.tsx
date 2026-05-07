@@ -94,19 +94,20 @@ export default function DraftAnalytics({ data }: Props) {
           Average pick number across all leagues where the player was drafted (min 2 leagues).
         </p>
         {/* Column headers */}
-        <div className="grid grid-cols-[2rem_3rem_1fr_auto_auto_auto] gap-x-3 text-xs text-gray-500 uppercase tracking-wide pb-2 border-b border-gray-800 mb-1 pr-1">
+        <div className="grid grid-cols-[2rem_3rem_1fr_auto_auto_auto_auto] gap-x-3 text-xs text-gray-500 uppercase tracking-wide pb-2 border-b border-gray-800 mb-1 pr-1">
           <span>#</span>
           <span>Pos</span>
           <span>Player</span>
           <span className="text-right">Pick</span>
-          <span className="text-right hidden sm:block">Range</span>
+          <span className="text-right hidden sm:block">Earliest</span>
+          <span className="text-right hidden sm:block">Latest</span>
           <span className="text-right hidden md:block">Leagues</span>
         </div>
         <div className="divide-y divide-gray-800">
           {top40.map((p, i) => (
             <div
               key={p.player_id}
-              className="grid grid-cols-[2rem_3rem_1fr_auto_auto_auto] gap-x-3 items-center py-2 pr-1 hover:bg-gray-800/50 rounded transition-colors"
+              className="grid grid-cols-[2rem_3rem_1fr_auto_auto_auto_auto] gap-x-3 items-center py-2 pr-1 hover:bg-gray-800/50 rounded transition-colors"
             >
               <span className="text-xs text-gray-500 tabular-nums">{i + 1}</span>
               <span
@@ -129,7 +130,10 @@ export default function DraftAnalytics({ data }: Props) {
                 {pickLabel(p.avgRound, p.avgSlot)}
               </span>
               <span className="text-xs text-gray-500 tabular-nums text-right hidden sm:block">
-                {p.minLabel}–{p.maxLabel}
+                {p.minLabel}
+              </span>
+              <span className="text-xs text-gray-500 tabular-nums text-right hidden sm:block">
+                {p.maxLabel}
               </span>
               <span className="text-xs text-gray-500 tabular-nums text-right hidden md:block">
                 {p.picks.length}
